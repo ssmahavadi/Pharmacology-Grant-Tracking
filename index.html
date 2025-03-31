@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smartsheet Grant Tracking</title>
+    <style>
+        input[type="text"] {
+            width: 400px;
+        }
+    </style>
+    <script>
+        function sendToSmartsheet() {
+            successmessage = document.getElementById("successMessage");
+            successmessage.style.color = "blue";
+            successmessage.innerText = "Loading...";
+
+            const dates = ["budgetStart", "budgetEnd", "projectStart", "projectEnd"];
+            dates.forEach(date => {
+                document.getElementById("error-message_" + date).style.display = "none";
+            });
+
+            const requiredFields = ["agency", "title", "budgetStart", "budgetEnd", "projectStart", "projectEnd", "propNo", "dept"];
+            let isValid = true;
+
+            requiredFields.forEach(field => {
+                let input = document.getElementById(field);
+                if (input.value.trim() === "") {
+                    input.style.border = "solid red";
+                    isValid = false;
+                } else {
+                    input.style.border = "";
+                }
+            });
+
+            if (!isValid) {
+                alert("Please fill in all required fields before sending to Smartsheet.");
+                successmessage.innerText = "";
+                return;
+            }
+
+            let incorrectDate = false;
+            const datePattern = /^(0[1-9]|1[0-2])\/(0[1-9]|[12][0-9]|3[01])\/\d{4}$/;
+            dates.forEach(date => {
+                let input = document.getElementById(date).value.trim();
+                let element = document.getElementById("error-message_" + date);
+                if (!datePattern.test(input)) {
+                    incorrectDate = true
+                    element.style.display = "inline";
+                }
+            });
+
+            if (incorrectDate) {
+                successmessage.innerText = "";
+                return;
+            }
+
+            const data = {};
+            document.querySelectorAll("input[type='text']").forEach(input => {
+                data[input.id] = input.value;
+            });
+
+            const selectedPIs = [];
+            document.querySelectorAll("input[name='piCheckbox']:checked").forEach(checkbox => {
+                const [piName, effort] = checkbox.value.match(/^(.*) \((\d+%?)\)$/).slice(1, 3);
+                selectedPIs.push({ PI: piName, Effort: effort });
+            });
+            data["pi"] = JSON.stringify(selectedPIs);
+            console.log(data["pi"])
+
+            fetch('/send_to_smartsheet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "success") {
+                    successmessage.style.color = "green";
+                    successmessage.innerText = "Data successfully sent to Smartsheet!";
+                } else {
+                    successmessage.style.color = "red";
+                    successmessage.innerText = "Failed to send data: " + data.message;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                successmessage.style.color = "red"
+                successmessage.innerText = "Failed to send data to Smartsheet: " + error.message;
+            });
+        }
+    </script>
+</head>
+<body>
+    <h3>Upload Grant Proposal PDF</h3>
+    <form action="/parse" method="post" enctype="multipart/form-data">
+        <input type="file" name = "file" id="fileInput">
+        <button type="submit">Parse</button>
+        <span id="message" style="margin-left: 10px; color: red;">{{message}}</span>
+    </form>
+
+    <h3>Extracted Information:</h3>
+
+    <div><label>Investigator(s):</label><br>
+        <div>
+            {% for pi in parsed_data.get('PI', []) %}
+                <input type="checkbox" name="piCheckbox" value="{{ pi['PI'] }} ({{ pi['Effort'] }}%)" checked>
+                <label>{{ pi['PI'] }} ({{ pi['Effort'] }}%)</label><br>
+            {% endfor %}
+        </div>
+        <input type="hidden" id="pi" value="[]">
+    </div><br>
+    
+    <label>Funding Agency: </label>
+    <input type="text" id="agency" value="{{ parsed_data.get('Funding Agency', '') }}"><br><br>
+
+    <label>Budget Period Start Date: </label>
+    <input type="text" id="budgetStart" value="{{ parsed_data.get('Budget Begin Date', '') }}">
+    <span id="error-message_budgetStart" style="color: blue; display: none;">Please follow MM/DD/YYYY format.</span><br><br>
+
+    <label>Budget Period End Date: </label>
+    <input type="text" id="budgetEnd" value="{{ parsed_data.get('Budget End Date', '') }}">
+    <span id="error-message_budgetEnd" style="color: blue; display: none;">Please follow MM/DD/YYYY format.</span><br><br>
+
+    <label>Project Period Start Date: </label>
+    <input type="text" id="projectStart" value="{{ parsed_data.get('Project Begin Date', '') }}">
+    <span id="error-message_projectStart" style="color: blue; display: none;">Please follow MM/DD/YYYY format.</span><br><br>
+
+    <label>Project Period End Date: </label>
+    <input type="text" id="projectEnd" value="{{ parsed_data.get('Project End Date', '') }}">
+    <span id="error-message_projectEnd" style="color: blue; display: none;">Please follow MM/DD/YYYY format.</span><br><br>
+
+    <label>Title: </label>
+    <input type="text" id="title" value="{{ parsed_data.get('Project Title', '') }}"><br><br>
+
+    <label>Proposal #: </label>
+    <input type="text" id="propNo" value="{{ parsed_data.get('Proposal No', '') }}"><br><br>
+
+    <label>Department: </label>
+    <input type="text" id="dept" value="{{ parsed_data.get('Award Admin Dept', '') }}"><br><br>
+
+    <label>Budget Direct: </label>
+    <input type="text" id="direct" value="{{ parsed_data.get('Budget Direct', '') }}"><br><br>
+
+    <label>Budget F&A Base: </label>
+    <input type="text" id="faBase" value="{{ parsed_data.get('Budget F&A Base', '') }}"><br><br>
+
+    <label>Budget F&A Amount: </label>
+    <input type="text" id="faAmt" value="{{ parsed_data.get('Budget F&A Amount', '') }}"><br><br>
+
+    <label>Budget Total: </label>
+    <input type="text" id="total" value="{{ parsed_data.get('Budget Total', '') }}"><br><br>
+
+    <button style="margin-right: 20px"; onclick="window.location.href='/'">Clear</button>
+    <button style="margin-right: 20px"; onclick="window.open('https://app.smartsheet.com/sheets/XmqVRVmQgRqFR5GvJ5hqR7jMjV3Q6Q2RvWW5CRx1?view=grid', '_blank')">Go to Sheet</button>
+    <button onclick="sendToSmartsheet()">Send to Smartsheet</button>
+    <span id="successMessage" style="font-weight: bold;"></span>
+</body>
+</html>
